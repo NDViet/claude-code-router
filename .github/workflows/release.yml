@@ -205,7 +205,21 @@ jobs:
       - name: Build and publish Windows artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run build:app:win:release -- --publish always
+          # publish-macos already created the release for this tag, and re-running this job is a
+          # normal recovery step. Without this, electron-builder refuses any release older than two
+          # hours and exits 0 having uploaded nothing.
+          EP_GH_IGNORE_TIME: "true"
+        run: npm run build:app:win:release -- --config build/electron-builder.ci.cjs --publish always
+
+      - name: Verify Windows release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | grep -q '\.exe$'; then
+            echo "No Windows installer was published to $GITHUB_REF_NAME."
+            exit 1
+          fi
 
   linux:
     name: Linux
@@ -243,6 +257,17 @@ jobs:
       - name: Build and publish Linux artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # See the Windows job: the release already exists by the time this runs.
+          EP_GH_IGNORE_TIME: "true"
         run: |
           npm run build:assets
-          npx electron-builder --linux AppImage --publish always
+          npx electron-builder --linux AppImage --config build/electron-builder.ci.cjs --publish always
+
+      - name: Verify Linux release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | grep -q '\.AppImage$'; then
+            echo "No Linux AppImage was published to $GITHUB_REF_NAME."
+            exit 1
+          fi
